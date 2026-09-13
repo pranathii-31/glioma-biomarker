@@ -124,9 +124,11 @@ def test_build_labels_end_to_end(tmp_path: Path) -> None:
 
     row_010 = labels.loc[labels["patient_id"] == "UCSF-PDGM-010"].iloc[0]
     assert row_010["idh"] == 1
+    assert row_010["who_grade"] == 2
 
     row_005 = labels.loc[labels["patient_id"] == "UCSF-PDGM-005"].iloc[0]
     assert pd.isna(row_005["mgmt"])
+    assert row_005["who_grade"] == 4
 
     assert report.n_idh_missing == 0
     assert report.mgmt_disagreement_ids == ["UCSF-PDGM-020"]

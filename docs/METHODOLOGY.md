@@ -34,12 +34,21 @@ other split. This test runs in CI and before every training run.
 ```
 495 patients
  ├── LOCK-BOX TEST: 20% (~99 patients)
- │     stratified by (IDH status × WHO grade × MGMT availability)
- │     written once to splits/test_patients.json with a fixed seed, then never regenerated
+ │     stratified by (IDH status × grade-bucket [grade 2/3 combined vs grade 4])
+ │     written once to splits/test_patients.json with a fixed seed (42), then never regenerated
  └── DEVELOPMENT: 80% (~396 patients)
-       └── 5-fold stratified CV, patient-level
+       └── 5-fold stratified CV, patient-level, same stratification key
              → model selection, hyperparameters, early stopping, architecture choices
 ```
+
+**Stratification key note:** the literal (IDH × WHO grade × MGMT availability) joint
+distribution has cells as small as 1 patient, which `StratifiedKFold(n_splits=5)` cannot split
+at all. The key actually used is IDH × grade-bucket (grade 2+3 combined vs grade 4) — its
+smallest cell is 24 patients, safe for both the lock-box split and 5-fold CV. MGMT-availability
+is computed and reported per split/fold in `results/splits_stratification.md` rather than
+mechanically enforced. See `docs/adr/002-split-stratification.md` for the full numbers and the
+reasoning — this is the disk-wins correction required by CLAUDE.md §9 when a protocol document
+turns out to conflict with what the actual data supports.
 
 Why not the plan's single 70/15/15? With ~100 IDH-mutant patients total, a 15% test set holds
 about 15 positives. One patient flipping moves AUC by several points, so a single split cannot

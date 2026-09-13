@@ -1,19 +1,14 @@
 """Mandatory leakage guard - see docs/METHODOLOGY.md §1 (rule L1/L2/L7) and CLAUDE.md §2.
 
-Written before splits/ exists (Phase 0), so it fails/xfails until Phase 2 generates
-`splits/test_patients.json` and `splits/cv_folds.json`. Once those are committed, delete the
-`xfail` marker below so this test enforces the guarantee on every CI run, as required by
-docs/METHODOLOGY.md §1: "This test runs in CI and before every training run."
-
-Checks required once splits exist:
-  - test / CV-fold patient ID sets are pairwise disjoint
-  - no `_FUxxxd` follow-up ID shares a base patient with any ID in another split
-  - the 6 known follow-up duplicates (docs/DATASET.md §2) are excluded entirely
+Runs in CI and before every training run, per docs/METHODOLOGY.md §1. `splits/` was generated
+once by `scripts/make_splits.py` (Phase 2, seed 42) and is committed - never regenerate it; if a
+change seems to require that, stop and ask (CLAUDE.md §9).
 """
 
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from glioma.data.labels import FOLLOWUP_DUPLICATE_IDS
@@ -27,7 +22,7 @@ def _load_patient_ids(path: Path) -> list[str]:
     with path.open() as f:
         data = json.load(f)
     if isinstance(data, dict):
-        # cv_folds.json shape is expected to be {"fold_0": [...], "fold_1": [...], ...}
+        # cv_folds.json shape is {"fold_0": [...], "fold_1": [...], ...}
         ids: list[str] = []
         for fold_ids in data.values():
             ids.extend(fold_ids)
@@ -35,10 +30,14 @@ def _load_patient_ids(path: Path) -> list[str]:
     return data
 
 
-@pytest.mark.xfail(
-    reason="splits/ has not been generated yet (Phase 2) - see docs/METHODOLOGY.md §2",
-    strict=False,
-)
+def test_split_files_exist() -> None:
+    assert TEST_PATIENTS_PATH.exists(), (
+        "splits/test_patients.json is missing - run `make splits` once, then commit it and "
+        "never regenerate (CLAUDE.md §9)"
+    )
+    assert CV_FOLDS_PATH.exists(), "splits/cv_folds.json is missing - see docs/METHODOLOGY.md §2"
+
+
 def test_test_and_cv_splits_are_disjoint() -> None:
     test_ids = set(_load_patient_ids(TEST_PATIENTS_PATH))
     cv_ids = set(_load_patient_ids(CV_FOLDS_PATH))
@@ -46,10 +45,6 @@ def test_test_and_cv_splits_are_disjoint() -> None:
     assert not overlap, f"Lock-box test set overlaps development CV folds: {overlap}"
 
 
-@pytest.mark.xfail(
-    reason="splits/ has not been generated yet (Phase 2) - see docs/METHODOLOGY.md §2",
-    strict=False,
-)
 def test_cv_folds_are_pairwise_disjoint() -> None:
     with CV_FOLDS_PATH.open() as f:
         folds: dict[str, list[str]] = json.load(f)
@@ -60,10 +55,6 @@ def test_cv_folds_are_pairwise_disjoint() -> None:
             seen[pid] = fold_name
 
 
-@pytest.mark.xfail(
-    reason="splits/ has not been generated yet (Phase 2) - see docs/METHODOLOGY.md §2",
-    strict=False,
-)
 def test_no_followup_duplicate_shares_a_split_with_its_base_patient() -> None:
     all_ids = set(_load_patient_ids(TEST_PATIENTS_PATH)) | set(_load_patient_ids(CV_FOLDS_PATH))
     # The base patient may legitimately appear once, in exactly one split - that is already
@@ -76,13 +67,15 @@ def test_no_followup_duplicate_shares_a_split_with_its_base_patient() -> None:
         )
 
 
-@pytest.mark.xfail(
-    reason="splits/ has not been generated yet (Phase 2) - see docs/METHODOLOGY.md §2",
-    strict=False,
+@pytest.mark.skipif(
+    not (TEST_PATIENTS_PATH.exists() and CV_FOLDS_PATH.exists()),
+    reason="splits/ missing",
 )
-def test_split_files_exist() -> None:
-    assert TEST_PATIENTS_PATH.exists(), (
-        "splits/test_patients.json is missing - run `make splits` once (Phase 2), then commit it "
-        "and never regenerate (CLAUDE.md §9)"
+def test_all_495_patients_are_assigned_to_exactly_one_split() -> None:
+    master_metadata_path = SPLITS_DIR.parent / "metadata" / "master_metadata.csv"
+    all_patients = set(pd.read_csv(master_metadata_path)["patient_id"])
+    assigned = set(_load_patient_ids(TEST_PATIENTS_PATH)) | set(_load_patient_ids(CV_FOLDS_PATH))
+    assert assigned == all_patients, (
+        f"Split assignment doesn't match master_metadata.csv - missing: "
+        f"{all_patients - assigned}, extra: {assigned - all_patients}"
     )
-    assert CV_FOLDS_PATH.exists(), "splits/cv_folds.json is missing - see docs/METHODOLOGY.md §2"

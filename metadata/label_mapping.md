@@ -63,3 +63,10 @@ from the index-only rule above; the log is for auditing, per docs/DATASET.md §5
 `Final pathologic diagnosis (WHO 2021)`, `WHO CNS Grade`, `1p/19q` - never used as model
 features (CLAUDE.md §2 rule 4). Listed in `labels.FORBIDDEN_INPUT_COLUMNS` so feature-building
 code can assert against it.
+
+## `who_grade` in the output table (added Phase 2)
+
+`build_labels` also returns a `who_grade` column (2/3/4, nullable Int64). It exists **only**
+for split stratification (docs/METHODOLOGY.md §2) and subgroup analysis (docs/METHODOLOGY.md
+§5) - it is still a forbidden input column per the section above, and Phase 4's dataset/feature
+code must exclude it explicitly rather than relying on it being absent from the table.
