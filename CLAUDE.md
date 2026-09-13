@@ -149,7 +149,8 @@ are current.
   `"""Split by patient. Slice-level splitting leaks — see docs/METHODOLOGY.md §1."""`
 - Fail loudly: assert tensor shapes, spacings, label ranges and value domains at every I/O boundary.
   A wrong-but-silent volume is far more expensive than a crash.
-- Small, focused commits with a conventional-commit prefix (`feat:`, `fix:`, `exp:`, `docs:`).
+- Small, focused commits with a conventional-commit prefix (`feat:`, `fix:`, `exp:`, `docs:`) and
+  a leading gitmoji — see §9 for the full commit convention.
 
 ---
 
@@ -201,15 +202,31 @@ BCE or focal loss, early stopping on **validation AUC** (patience 15), max ~100 
 
 ## 9. Working agreements for Claude Code
 
-- **Start every session by reading `PROGRESS.md`** (current phase, what is done, what is blocked)
-  and update it at the end of the session.
-- **Plan before writing code** for anything beyond a single file. Propose the plan, wait for
-  confirmation on anything that changes the protocol, data handling or splits.
-- **Never regenerate `splits/`.** If a change seems to require it, stop and ask — it invalidates
-  every prior result.
+- **Start every session by reading `PROGRESS.md`** (current phase, what is done, what is blocked).
+
+- **Plan each phase, review it, then implement — in that order, every time.** Before writing any
+  code for a phase (not just changes beyond a single file), write a short plan: what will be
+  built, in what order, and what the phase's definition-of-done check (§10) will actually verify.
+  Present the plan and give it a genuine, thorough review yourself before asking the user to
+  confirm — a quick skim is not a review. **Ask first** whenever the plan surfaces an ambiguity,
+  a missing decision, an inconsistency with the docs, or any real doubt about what's wanted; do
+  not guess and proceed past it. Only start implementing after the user has confirmed.
 - **One phase at a time.** Do not start Phase N+1 while Phase N's definition-of-done is unmet.
 - **Write the test before the pipeline stage**, especially for data handling.
 - Run `make lint && make test` before declaring any task complete.
+- **Commit at the end of every phase**, once lint and tests are green (and at other natural
+  checkpoints within a long phase — don't let one commit span unrelated changes):
+  - [Conventional Commits](https://www.conventionalcommits.org) prefix (`feat:`, `fix:`, `exp:`,
+    `docs:`, `test:`, `chore:`, `refactor:`), with a leading gitmoji matching the prefix
+    (e.g. `✨ feat:`, `🐛 fix:`, `🧪 exp:`, `📝 docs:`, `✅ test:`, `🔧 chore:`, `♻️ refactor:`).
+  - A detailed body explaining *why*, not just what — cite the CLAUDE.md rule, docs section, or
+    phase definition-of-done item the change satisfies.
+  - **No AI co-author attribution line** (no `Co-Authored-By: Claude ...`) on commits in this repo.
+  - Keep each commit scoped to one phase or one logical unit.
+- **Update `PROGRESS.md` before ending any session, and always at the end of a phase** — done,
+  next, and open questions — so the next session resumes without the user re-explaining context.
+- **Never regenerate `splits/`.** If a change seems to require it, stop and ask — it invalidates
+  every prior result.
 - When a result looks too good, **investigate before reporting**. Check split integrity, label
   mapping, and whether the preprocessing cache is stale.
 - **Surface uncertainty.** If the dataset on disk disagrees with `docs/DATASET.md`, the disk wins —
