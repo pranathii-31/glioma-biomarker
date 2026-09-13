@@ -16,21 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from glioma.data.labels import FOLLOWUP_DUPLICATE_IDS
+
 SPLITS_DIR = Path(__file__).resolve().parents[1] / "splits"
 TEST_PATIENTS_PATH = SPLITS_DIR / "test_patients.json"
 CV_FOLDS_PATH = SPLITS_DIR / "cv_folds.json"
-
-# UCSF-PDGM follow-up duplicates - docs/DATASET.md §2. Both the 4-digit `_FU` id and its
-# 3-digit base patient must never land in the same split, and the `_FU` id must never appear
-# in any split at all (it is excluded before splitting, not merely deduplicated).
-KNOWN_FOLLOWUP_IDS = {
-    "UCSF-PDGM-0391_FU016d": "UCSF-PDGM-391",
-    "UCSF-PDGM-0396_FU175d": "UCSF-PDGM-396",
-    "UCSF-PDGM-0409_FU001d": "UCSF-PDGM-409",
-    "UCSF-PDGM-0429_FU003d": "UCSF-PDGM-429",
-    "UCSF-PDGM-0431_FU001d": "UCSF-PDGM-431",
-    "UCSF-PDGM-0433_FU007d": "UCSF-PDGM-433",
-}
 
 
 def _load_patient_ids(path: Path) -> list[str]:
@@ -76,12 +66,12 @@ def test_cv_folds_are_pairwise_disjoint() -> None:
 )
 def test_no_followup_duplicate_shares_a_split_with_its_base_patient() -> None:
     all_ids = set(_load_patient_ids(TEST_PATIENTS_PATH)) | set(_load_patient_ids(CV_FOLDS_PATH))
-    # The base patient may legitimately appear once, but only once, in the union above -
-    # that is already covered by the disjointness tests above. Here we only guard against the
-    # follow-up id itself (the 4-digit `_FU` spelling) leaking back into any split.
-    for fu_id in KNOWN_FOLLOWUP_IDS:
-        assert fu_id not in all_ids, (
-            f"Follow-up duplicate {fu_id} must be excluded before splitting - see "
+    # The base patient may legitimately appear once, in exactly one split - that is already
+    # covered by the disjointness tests above. Here we only guard against any spelling of a
+    # follow-up duplicate (docs/DATASET.md §2, frozen in glioma.data.labels) leaking in.
+    for duplicate_id in FOLLOWUP_DUPLICATE_IDS:
+        assert duplicate_id not in all_ids, (
+            f"Follow-up duplicate {duplicate_id} must be excluded before splitting - see "
             "docs/DATASET.md §2"
         )
 
