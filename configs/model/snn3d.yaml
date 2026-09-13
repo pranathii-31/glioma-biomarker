@@ -1,0 +1,8 @@
+# SNN arm - stretch goal, see CLAUDE.md §8. Descope formally in docs/adr/ if the schedule slips.
+name: snn3d
+backbone: conv3d
+neuron: LIF
+time_steps: 4 # activation memory scales with T; consider 64^3 inputs at T=8
+surrogate_gradient: fast_sigmoid
+conversion_source: null # path to a trained cnn3d checkpoint for the ANN->SNN conversion variant
+tasks: [idh, mgmt]

@@ -1,0 +1,7 @@
+# Baseline 3D CNN - see CLAUDE.md §8.
+name: cnn3d
+architecture: resnet34 # MONAI resnet18 | resnet34 | densenet121
+spatial_dims: 3
+pretrained: false # consider MedicalNet pretrained weights
+shared_trunk: true
+tasks: [idh, mgmt]

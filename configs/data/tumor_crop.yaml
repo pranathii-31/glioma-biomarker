@@ -1,0 +1,15 @@
+# Tumour-centred crop input regime - higher expected AUC, but the prototype must ship a
+# segmenter and metrics with predicted masks must be reported separately. See docs/DATASET.md §8
+# (Option B) and record the choice in docs/adr/.
+name: tumor_crop
+modalities: [T1, T1c, T2, FLAIR] # fixed order everywhere - see CLAUDE.md §7
+bias_corrected: true # use the provided *_bias.nii.gz series
+native_shape: [240, 240, 155]
+native_spacing_mm: 1.0
+input_size: [96, 96, 96]
+crop_to_tumor: true
+tumor_segmentation_source: ground_truth # ground_truth (train) | predicted (prototype)
+normalization: zscore_in_brain_mask # per-patient, per-modality
+raw_dir: data/raw
+processed_dir: data/processed
+manifest_path: metadata/master_metadata.csv

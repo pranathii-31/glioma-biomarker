@@ -1,0 +1,11 @@
+# @package _global_
+# Example experiment config composing data/model/train - see CLAUDE.md §5 `make train EXP=...`.
+defaults:
+  - /data: whole_brain
+  - /model: cnn3d
+  - /train: default
+  - _self_
+
+run_name: cnn3d_baseline
+tasks: [idh, mgmt]
+seed: 0

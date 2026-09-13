@@ -1,0 +1,14 @@
+# Whole-brain input regime - no segmentation dependency, honest end-to-end pipeline.
+# See docs/DATASET.md §8 (Option A).
+name: whole_brain
+modalities: [T1, T1c, T2, FLAIR] # fixed order everywhere - see CLAUDE.md §7
+bias_corrected: true # use the provided *_bias.nii.gz series
+native_shape: [240, 240, 155]
+native_spacing_mm: 1.0
+input_size: [128, 128, 128]
+crop_to_tumor: false
+tumor_segmentation_source: null
+normalization: zscore_in_brain_mask # per-patient, per-modality
+raw_dir: data/raw
+processed_dir: data/processed
+manifest_path: metadata/master_metadata.csv

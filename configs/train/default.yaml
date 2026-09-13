@@ -1,0 +1,23 @@
+# Shared training defaults across all three architectures - see CLAUDE.md §8.
+# Same optimiser family, epoch budget and early-stopping rule for every architecture
+# (docs/METHODOLOGY.md §7) so comparisons stay fair.
+optimizer: adamw
+lr: 1.0e-4
+lr_schedule: cosine
+warmup_epochs: 5
+weight_decay: 0.03 # 0.01-0.05
+batch_size: 6 # 4-8 at 96^3
+amp: bf16
+grad_checkpointing: false # enable if memory-bound
+max_epochs: 100
+early_stopping:
+  metric: val_auc
+  patience: 15
+loss:
+  type: masked_multitask_bce # or focal
+  task_weights:
+    idh: 1.0
+    mgmt: 1.0
+seeds: [0, 1, 2] # >=3 seeds per CLAUDE.md §2 rule 9; 5 preferred
+num_workers: 4 # start here - pin_memory + large 3D volumes + many workers can OOM the host
+pin_memory: false

@@ -1,0 +1,12 @@
+# Hybrid 3D CNN-ViT (main contribution) - keep the transformer small, see CLAUDE.md §8.
+name: cnn_vit3d
+conv_stem_channels: [32, 64, 128] # downsamples to a manageable token grid
+token_grid: [6, 6, 6] # e.g. 6^3 = 216 tokens from a 96^3 input at stride 16
+transformer:
+  depth: 3 # 2-4 layers
+  dim: 320 # 256-384
+  heads: 5 # 4-6
+  drop_path: 0.2 # 0.1-0.3
+  weight_decay: 0.05
+pretrained_encoder: null # optional path to an SSL-pretrained SwinUNETR encoder
+tasks: [idh, mgmt]

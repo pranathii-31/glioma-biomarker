@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "glioma"
+version = "0.1.0"
+description = "Predicting IDH and MGMT status from 3D multiparametric MRI on UCSF-PDGM"
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = { text = "MIT" }
+authors = [{ name = "Pranathi", email = "pranathi.ananth@gmail.com" }]
+
+# Resolved against the environment on 2026-09-13: Python 3.10.10, arm64 (macOS/M-series).
+# CLAUDE.md §5 states Python 3.11 as the target; only 3.10 is installed on this machine.
+# See docs/ENVIRONMENT.md for the full discrepancy note.
+dependencies = [
+    "torch==2.14.0",
+    "monai==1.6.0",
+    "nibabel==5.4.2",
+    "SimpleITK==2.5.6",
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "scipy==1.15.3",
+    "scikit-learn==1.7.2",
+    "pyradiomics==3.1.0",
+    "lightgbm==4.7.0",
+    "hydra-core==1.3.6",
+    "omegaconf==2.3.1",
+    "mlflow==3.16.0",
+    "streamlit==1.63.0",
+]
+
+[project.optional-dependencies]
+# SNN arm is a stretch goal (CLAUDE.md §8) - kept out of the base install so Phases 0-6
+# don't pay for it on a 16GB laptop. Install with `pip install -e ".[snn]"` for Phase 8.
+snn = ["snntorch==1.0.0"]
+
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.7",
+    "black==26.5.1",
+    "mypy==2.3.1",
+    "pre-commit==4.6.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["data", "experiments", "results"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+strict = true
+# Several ML dependencies (monai, pyradiomics, snntorch) ship incomplete or no stubs.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "glioma.*"
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

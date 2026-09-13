@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /data: whole_brain
+  - /model: cnn_vit3d
+  - /train: default
+  - _self_
+
+run_name: cnn_vit3d_baseline
+tasks: [idh, mgmt]
+seed: 0

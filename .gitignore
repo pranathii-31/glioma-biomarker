@@ -1,5 +1,25 @@
-data/
+/data/
 *.nii.gz
 *.npy
 .venv/
 __pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# experiment artifacts - metrics.json/config.yaml are the reported source of truth,
+# checkpoints and raw logs are not committed
+experiments/*/checkpoints/
+experiments/*/*.ckpt
+experiments/*/*.pt
+mlruns/
+
+# tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+.DS_Store
