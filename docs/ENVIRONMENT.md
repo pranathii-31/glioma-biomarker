@@ -39,6 +39,7 @@ each. Everything else's latest release still supports 3.10.
 | mlflow | 3.16.0 |
 | streamlit | 1.63.0 |
 | snntorch (optional `[snn]` extra) | 1.0.0 |
+| matplotlib (added Phase 3, resolved 2026-09-14) | 3.10.9 |
 | pytest / ruff / black / mypy / pre-commit (dev) | 9.1.1 / 0.16.7 / 26.5.1 / 2.3.1 / 4.6.2 |
 
 This is a second, independent reason (beyond CLAUDE.md's stated target) to install Python 3.11:

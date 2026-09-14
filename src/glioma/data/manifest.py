@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from glioma.data.labels import LabelBuildReport, build_labels
+from glioma.data.labels import FOLLOWUP_DUPLICATE_IDS, LabelBuildReport, build_labels
 from glioma.utils.io import normalize_patient_id, patient_nifti_dirs
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,17 @@ SERIES_SUFFIXES: dict[str, str] = {
 }
 
 # The series the training pipeline cannot proceed without - the fixed modality order
-# (CLAUDE.md §7) plus the tumour segmentation used for the tumor_crop regime and for
-# in-tumour explainability metrics.
-REQUIRED_SUFFIXES = ("T1_bias", "T1c_bias", "T2_bias", "FLAIR_bias", "tumor_segmentation")
+# (CLAUDE.md §7), the brain mask normalisation is computed within (docs/DATASET.md §7-8), and
+# the tumour segmentation used for the tumor_crop regime and for in-tumour explainability
+# metrics.
+REQUIRED_SUFFIXES = (
+    "T1_bias",
+    "T1c_bias",
+    "T2_bias",
+    "FLAIR_bias",
+    "brain_segmentation",
+    "tumor_segmentation",
+)
 
 
 @dataclass(frozen=True)
@@ -74,10 +82,19 @@ def _glob_series_file(patient_dir: Path, suffix: str) -> Path | None:
 
 
 def build_series_manifest(raw_dir: Path) -> pd.DataFrame:
-    """Glob every patient folder under `raw_dir` and record which series are available."""
+    """Glob every patient folder under `raw_dir` and record which series are available.
+
+    Skips the 6 known follow-up-duplicate folders outright (CLAUDE.md §2 rule 5) rather than
+    letting them surface as "image-only" patients in `build_master_metadata`'s outer join -
+    they are a known, already-documented non-match with the labels CSV (labels.py already
+    excludes their CSV rows the same way), unlike a genuinely unexpected new patient folder,
+    which that warning is meant to catch.
+    """
     rows = []
     for patient_dir in patient_nifti_dirs(raw_dir):
         folder_id = patient_dir.name.removesuffix("_nifti")
+        if folder_id in FOLLOWUP_DUPLICATE_IDS:
+            continue
         row: dict[str, object] = {
             "patient_id": normalize_patient_id(folder_id),
             "folder_id": folder_id,

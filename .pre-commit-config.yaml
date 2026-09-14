@@ -15,7 +15,12 @@ repos:
     hooks:
       - id: mypy
         args: [--config-file=pyproject.toml]
-        additional_dependencies: []
+        # numpy/pandas/omegaconf ship inline types (py.typed) that mypy needs installed to
+        # resolve annotations like numpy.typing.NDArray - without these the hook's isolated
+        # env can't see them and every such annotation fails as "not valid as a type", even
+        # though `mypy src` passes cleanly against the project's real .venv (CLAUDE.md §6).
+        additional_dependencies:
+          ["numpy==2.2.6", "pandas==2.3.3", "omegaconf==2.3.1", "nibabel==5.4.2"]
         files: ^src/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
