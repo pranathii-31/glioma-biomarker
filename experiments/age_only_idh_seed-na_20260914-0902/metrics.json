@@ -1,0 +1,22 @@
+{
+  "model": "age_only",
+  "task": "idh",
+  "seed": null,
+  "n": 396,
+  "n_positive": 83,
+  "auc": 0.9067323607529157,
+  "auc_ci_low": 0.862371321237062,
+  "auc_ci_high": 0.9412057977783997,
+  "auprc": 0.7397539774760399,
+  "auprc_ci_low": 0.6381046539460427,
+  "auprc_ci_high": 0.8314068711337094,
+  "accuracy": 0.8585858585858586,
+  "majority_baseline_accuracy": 0.7904040404040404,
+  "balanced_accuracy": 0.8618499557334771,
+  "sensitivity": 0.8674698795180723,
+  "specificity": 0.8562300319488818,
+  "f1": 0.72,
+  "brier": 0.08722575474019825,
+  "threshold": 0.23982613487841625,
+  "protocol": "5-fold pooled-OOF CV on dev set (splits/cv_folds.json); test set untouched"
+}

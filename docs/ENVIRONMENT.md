@@ -67,6 +67,24 @@ annotations against them, matching what `mypy src` sees locally - added in the P
 after the hook silently passed code that failed a real `mypy src` run (it couldn't see
 `numpy.typing.NDArray` at all with no numpy installed, so those annotations were never checked).
 
+## Phase 5 update (2026-09-15): pyradiomics pin corrected, lightgbm needs libomp
+
+`pyradiomics==3.1.0` (as pinned) cannot be installed: its PyPI sdist is broken - the package
+metadata says `3.1.0` but the build backend reports `3.0.1a1` internally, and pip's version
+consistency check rejects the mismatch (confirmed via `pip index versions`, `3.1.0` is the only
+listed version above `3.0.1`, so there is no newer working release to move to instead). **Pin
+corrected to `pyradiomics==3.0.1`** (the last cleanly-tagged release) in `pyproject.toml`. It
+also needs `--no-build-isolation` to install (its legacy `setup.py` imports `numpy` directly at
+build time without declaring it as a PEP 517 build requirement) - use
+`pip install pyradiomics==3.0.1 --no-build-isolation` with numpy already installed in the venv.
+Verified working: `radiomics.featureextractor.RadiomicsFeatureExtractor()` constructs cleanly.
+
+`lightgbm==4.7.0` installs fine via pip but fails at import with
+`Library not loaded: @rpath/libomp.dylib` - it needs the OpenMP runtime, which macOS doesn't
+ship. Fixed with `brew install libomp` (system-level Homebrew install, confirmed with the user
+before running since it's outside the project/venv). Verified working after: `LGBMClassifier`
+fits and predicts.
+
 ## Experiment tracking
 
 CLAUDE.md §5 leaves this as "W&B *or* MLflow". Defaulted to **local MLflow** (`mlruns/`,

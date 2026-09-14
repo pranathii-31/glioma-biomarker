@@ -133,6 +133,15 @@ def test_build_labels_end_to_end(tmp_path: Path) -> None:
     assert report.n_idh_missing == 0
     assert report.mgmt_disagreement_ids == ["UCSF-PDGM-020"]
 
+    # age/sex are carried through for the Phase 5 age-only/age+sex baselines (METHODOLOGY.md §3)
+    # - forbidden as *deep-learning* inputs is not the rule here (that's diagnosis/grade/1p19q,
+    # CLAUDE.md §2 rule 4); age and sex are explicitly mandated clinical baseline features.
+    assert row_010["age"] == 40
+    assert row_010["sex"] == "F"
+    row_004 = labels.loc[labels["patient_id"] == "UCSF-PDGM-004"].iloc[0]
+    assert row_004["age"] == 66
+    assert row_004["sex"] == "M"
+
 
 def test_followup_duplicate_table_has_matching_pairs() -> None:
     # Every duplicate id must map to a base id that is itself never a key (i.e. base ids are

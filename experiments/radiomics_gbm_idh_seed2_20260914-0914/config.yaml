@@ -1,0 +1,6 @@
+{
+  "model": "radiomics_gbm",
+  "task": "idh",
+  "seed": 2,
+  "n_features_selected": 20
+}

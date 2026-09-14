@@ -26,6 +26,8 @@ DIAGNOSIS_COLUMN = "Final pathologic diagnosis (WHO 2021)"
 MGMT_STATUS_COLUMN = "MGMT status"
 MGMT_INDEX_COLUMN = "MGMT index"
 WHO_GRADE_COLUMN = "WHO CNS Grade"
+AGE_COLUMN = "Age at MRI"
+SEX_COLUMN = "Sex"
 
 IDH_WILDTYPE_TOKEN = "wildtype"
 
@@ -156,13 +158,15 @@ def build_labels(csv_path: Path) -> tuple[pd.DataFrame, LabelBuildReport]:
     """Load the metadata CSV and return a frozen, patient-level label table.
 
     Output columns: `patient_id` (normalized), `idh`, `mgmt` (both nullable Int64; MGMT is
-    <NA> for patients without a usable label - masked, not dropped, downstream), and
-    `who_grade` (nullable Int64, 2/3/4).
+    <NA> for patients without a usable label - masked, not dropped, downstream), `who_grade`
+    (nullable Int64, 2/3/4), `age` (nullable Float64, years) and `sex` (nullable string, "M"/"F").
 
     `who_grade` is carried through for split stratification (docs/METHODOLOGY.md §2) and
     subgroup analysis (docs/METHODOLOGY.md §5) ONLY - it is one of the `FORBIDDEN_INPUT_COLUMNS`
-    and must never be selected as a model feature (CLAUDE.md §2 rule 4). Callers that build a
-    feature matrix from this table must exclude it explicitly.
+    and must never be selected as a *deep-learning* model feature (CLAUDE.md §2 rule 4). Callers
+    that build a feature matrix from this table for the CNN/CNN-ViT/SNN must exclude it
+    explicitly. `age`/`sex` are the opposite case - not forbidden, they are the mandatory
+    age-only and age+sex clinical baselines required by docs/METHODOLOGY.md §3.
     """
     raw = load_raw_metadata(csv_path)
     n_rows_in_csv = len(raw)
@@ -187,11 +191,15 @@ def build_labels(csv_path: Path) -> tuple[pd.DataFrame, LabelBuildReport]:
             "idh": idh.to_numpy(),
             "mgmt": mgmt.to_numpy(),
             "who_grade": clean[WHO_GRADE_COLUMN].to_numpy(),
+            "age": clean[AGE_COLUMN].to_numpy(),
+            "sex": clean[SEX_COLUMN].to_numpy(),
         }
     )
     labels["idh"] = labels["idh"].astype("Int64")
     labels["mgmt"] = labels["mgmt"].astype("Int64")
     labels["who_grade"] = labels["who_grade"].astype("Int64")
+    labels["age"] = labels["age"].astype("Float64")
+    labels["sex"] = labels["sex"].astype("string")
 
     report = LabelBuildReport(
         n_rows_in_csv=n_rows_in_csv,

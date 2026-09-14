@@ -1,0 +1,22 @@
+{
+  "model": "majority",
+  "task": "idh",
+  "seed": null,
+  "n": 396,
+  "n_positive": 83,
+  "auc": 0.5,
+  "auc_ci_low": 0.5,
+  "auc_ci_high": 0.5,
+  "auprc": 0.20959595959595959,
+  "auprc_ci_low": 0.1717171717171717,
+  "auprc_ci_high": 0.25,
+  "accuracy": 0.7904040404040404,
+  "majority_baseline_accuracy": 0.7904040404040404,
+  "balanced_accuracy": 0.5,
+  "sensitivity": 0.0,
+  "specificity": 1.0,
+  "f1": 0.0,
+  "brier": 0.20959595959595959,
+  "threshold": Infinity,
+  "protocol": "5-fold pooled-OOF CV on dev set (splits/cv_folds.json); test set untouched"
+}
