@@ -1,4 +1,4 @@
-## Current phase: 3 — Preprocessing (465/495 patients cached; 30 pending download)
+## Current phase: 4 — Dataset & loader (complete for the 465/495 currently-cached patients)
 
 ### Done
 
@@ -40,7 +40,7 @@
   pass, not just unmarked.
 - `make lint && make test` green: 30 passed, 0 skipped/xfailed.
 
-**Phase 3 (preprocessing) — in progress, not yet complete:**
+**Phase 3 (preprocessing) — committed (`6207ae8`):**
 - The UCSF-PDGM download (Aspera, ~132GB landed so far of the full ~156GB) arrived at
   `~/Downloads/PKG - UCSF-PDGM Version 5/UCSF-PDGM-v5/`, not `data/raw/` as every config assumes.
   `data/raw` is now a **symlink** to that location (not a copy — `data/raw/` is gitignored and
@@ -90,11 +90,59 @@
   ("100% of patients") is satisfied for the 465 currently-eligible patients, not literally all
   495 — this is a deliberate, documented partial completion (ADR 003), not an oversight.
 
+**Phase 4 (dataset & loader) — complete:**
+- Planned first per CLAUDE.md §9: presented the plan, surfaced three genuine ambiguities rather
+  than guessing, and got explicit answers before writing any code:
+  1. CLAUDE.md §10's Phase 4 row literally specifies a `(B,4,96,96,96)` sanity batch (the
+     `tumor_crop` regime), while every `configs/experiment/*.yaml` defaults to `whole_brain`
+     (128³). **Confirmed**: target `tumor_crop` for the loader/overfit-sanity check; the loader
+     itself stays regime-agnostic.
+  2. The overfit-10 sanity check needs a trainable model, but the 3D CNN baseline is nominally
+     Phase 5 scope. **Confirmed**: build a minimal, real (not throwaway) `cnn3d.py` now, reused
+     and extended in Phase 5.
+  3. `torch`/`monai` weren't installed yet (Phase 0 deliberately deferred them). **Confirmed**:
+     install the pinned versions now (macOS/arm64, no CUDA - ~130MB, not the multi-GB download
+     the original deferral was guarding against). MPS confirmed available on this M4 - see
+     `docs/ENVIRONMENT.md`'s Phase 4 update.
+- `src/glioma/data/dataset.py` (tests first, `tests/test_dataset.py`, 9 tests): `GliomaVolumeDataset`
+  reads Phase 3's cached `.npy` files, returns `(volume, labels, masks)` with MGMT masked (not
+  dropped) exactly when the label is missing (docs/DATASET.md §7); asserts the data config's
+  modality order against the fixed `[T1, T1c, T2, FLAIR]` canonical order (CLAUDE.md §7); skips
+  and logs (never crashes on) a requested-but-not-yet-cached patient, consistent with Phase 3's
+  stance on the still-partial download. `build_transforms("train")` composes MONAI augmentation
+  (flips, ±10° rotation, zoom, intensity jitter, Gaussian noise, coarse dropout) - deliberately
+  **no elastic deformation** (CLAUDE.md §7 forbids it on tumour-cropped 1mm volumes without a
+  prior visual check); `build_transforms("eval")` is a no-op, so augmentation never touches
+  val/test (docs/METHODOLOGY.md L5).
+- `src/glioma/models/heads.py` + `src/glioma/models/cnn3d.py` (tests first,
+  `tests/test_cnn3d.py`, 3 tests): `MultitaskHeads` (one linear logit per task) on top of a
+  MONAI 3D ResNet trunk (`resnet18`/`resnet34`, `feed_forward=False` to expose pooled features).
+  Only the two architectures `configs/model/cnn3d.yaml` actually offers as non-pretrained
+  options are implemented - `densenet121` and MedicalNet-pretrained weights raise a clear
+  `NotImplementedError`-style message pointing at Phase 5.
+- `src/glioma/train/losses.py` (tests first, `tests/test_losses.py`, 4 tests):
+  `masked_multitask_bce` - per-task `BCEWithLogitsLoss`, averaged only over that task's labelled
+  samples, contributing exactly 0 (no NaN) when a batch has zero labelled samples for a task.
+- `scripts/overfit_sanity.py`: trains `cnn3d` on 10 real cached dev-set `tumor_crop` patients
+  (only ever from `splits/cv_folds.json` - the lock-box test set is never touched, CLAUDE.md §2
+  rule 2), no augmentation, until ~100% train accuracy on both tasks. **Ran for real: converged
+  at epoch 9 to 100% train accuracy on both idh and mgmt.** Also measured loader throughput
+  (bonus criterion from ACTION_PLAN.md, not in CLAUDE.md's formal DoD): **4.46 volumes/s**
+  (target >2/s) over 126 volumes from the `tumor_crop` DataLoader (`batch_size=6,
+  num_workers=4`, MPS device).
+- **Bug found and fixed along the way**: the pre-commit mypy hook's isolated environment had
+  none of numpy/pandas/omegaconf/nibabel installed, so it silently passed code using
+  `numpy.typing.NDArray` etc. without actually type-checking those annotations - a real `mypy
+  src` run (using the project's actual `.venv`) caught 20 errors the hook had missed. Fixed by
+  pinning those four packages as `additional_dependencies` on the mypy hook in
+  `.pre-commit-config.yaml`, so the hook's environment now matches what `mypy src` sees.
+- `make lint && make test` green: 70 passed.
+
 ### Next
 
-Finish Phase 3: rerun preprocessing as the remaining ~30 patients complete download, then commit.
-After that, Phase 4 — Dataset/loader (MONAI `CacheDataset`, masked multitask labels, overfit-10
-sanity run) per CLAUDE.md §10.
+Phase 5 — Baselines (majority, age-only, radiomics+GBM, 3D ResNet, all with CIs) per
+CLAUDE.md §10, building on the `cnn3d.py` scaffolded in Phase 4. Also: rerun both Phase 3
+preprocessing regimes as the remaining ~30 patients finish downloading (resumable).
 
 ### Open questions
 
@@ -105,3 +153,5 @@ sanity run) per CLAUDE.md §10.
   patients; no decision needed until Phase 6.
 - When is a good point to treat Phase 3 as "final" — rerun once after the download fully
   finishes, or keep rerunning incrementally as batches land?
+- `torch.use_deterministic_algorithms(True)` on MPS is still unverified (docs/ENVIRONMENT.md) —
+  needs checking before Phase 5's multi-seed runs, since CLAUDE.md §10 requires reproducibility.

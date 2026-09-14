@@ -15,12 +15,21 @@ repos:
     hooks:
       - id: mypy
         args: [--config-file=pyproject.toml]
-        # numpy/pandas/omegaconf ship inline types (py.typed) that mypy needs installed to
-        # resolve annotations like numpy.typing.NDArray - without these the hook's isolated
-        # env can't see them and every such annotation fails as "not valid as a type", even
-        # though `mypy src` passes cleanly against the project's real .venv (CLAUDE.md §6).
+        # These ship inline types (py.typed) that mypy needs installed to resolve annotations
+        # against them (numpy.typing.NDArray, nn.Module subclassing, torch.utils.data.Dataset
+        # generics, ...) - without them the hook's isolated env can't see the real types and
+        # either fails oddly ("not valid as a type", "cannot subclass Any") or silently skips
+        # checking, even though `mypy src` passes cleanly against the project's real .venv
+        # (CLAUDE.md §6). Keep this in sync with whatever Phase N actually imports in src/.
         additional_dependencies:
-          ["numpy==2.2.6", "pandas==2.3.3", "omegaconf==2.3.1", "nibabel==5.4.2"]
+          [
+            "numpy==2.2.6",
+            "pandas==2.3.3",
+            "omegaconf==2.3.1",
+            "nibabel==5.4.2",
+            "torch==2.14.0",
+            "monai==1.6.0",
+          ]
         files: ^src/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks

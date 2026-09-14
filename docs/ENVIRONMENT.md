@@ -45,9 +45,27 @@ each. Everything else's latest release still supports 3.10.
 This is a second, independent reason (beyond CLAUDE.md's stated target) to install Python 3.11:
 it would let numpy/pandas/scipy/scikit-learn track current releases instead of being capped by
 the interpreter. Only the `dev` toolchain (pytest/ruff/black/mypy/pre-commit) was actually
-installed and exercised in this session, to verify `make lint` and `make test` on the empty
-scaffold - the full heavy/GPU-oriented dependency set (torch, monai, etc.) was not installed here,
-by design, to avoid a multi-GB download before there is any code to run against it.
+installed and exercised in Phase 0-3, to verify `make lint` and `make test` on the empty
+scaffold - the full heavy/GPU-oriented dependency set (torch, monai, etc.) was deliberately
+deferred until Phase 4 actually needed it (see below), rather than a multi-GB download before
+there was any code to run against it.
+
+## Phase 4 update (2026-09-14): torch + monai installed
+
+`torch==2.14.0` and `monai==1.6.0` (both already pinned in `pyproject.toml`) are now installed -
+the macOS/arm64 build has no CUDA dependency, so this was ~130MB (torch wheel) + ~2MB (monai
+wheel), not the multi-GB CUDA download the note above was guarding against.
+
+**MPS confirmed available**: `torch.backends.mps.is_available()` is `True` on this M4. Training
+in `scripts/overfit_sanity.py` defaults to MPS with a CPU fallback. `torch.use_deterministic_
+algorithms(True)` on MPS (flagged as unverified above) has *not* been tested yet - still an open
+question for Phase 5+, deferred until a real multi-seed training run needs it.
+
+The pre-commit mypy hook's `additional_dependencies` (`.pre-commit-config.yaml`) now includes
+`numpy`/`pandas`/`omegaconf`/`nibabel` so its isolated environment can actually resolve type
+annotations against them, matching what `mypy src` sees locally - added in the Phase 3 commit
+after the hook silently passed code that failed a real `mypy src` run (it couldn't see
+`numpy.typing.NDArray` at all with no numpy installed, so those annotations were never checked).
 
 ## Experiment tracking
 
