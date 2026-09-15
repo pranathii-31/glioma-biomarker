@@ -190,20 +190,79 @@
   pinned `3.0.1`), documented the `lightgbm`/`libomp` fix, and added `SimpleITK` to the mypy
   pre-commit hook's `additional_dependencies` (it was silently passing an error that a real
   `mypy src` run correctly caught, same class of hook/real-mypy mismatch as Phase 4's bug).
-- `make lint && make test` green: 103 passed.
+- `make lint && make test` green: 103 passed (as of the `7144851`/`15fe9df` commits).
+
+**Phase 5 continued — Colab GPU workflow prepared, NOT yet run (this session):**
+
+Decided (user-confirmed) to move ResNet training off the M4 to a Colab GPU rather than retry
+the thrashing MPS pilot. Implemented, lint/mypy-clean, but **not committed and not verified by
+`pytest`** — see the environment blocker below:
+
+- `src/glioma/train/loop.py`: checkpoints now save full trainer state (model, optimizer, epoch,
+  best-AUC bookkeeping, patience counter, RNG state), not just weights, via a new `resume_from`
+  param — needed because a Colab session can disconnect mid-run and weights-only resume would
+  silently reset the LR schedule position and patience counter. Added `epoch_limit` (distinct
+  from `max_epochs`) to cap one session to a time budget without corrupting the schedule; added
+  `amp_dtype` (autocast was not wired in anywhere before this); added per-epoch peak-GPU-memory
+  logging; added `find_latest_checkpoint()` and `predict_probs_by_task()` (per-patient val
+  predictions, needed to pool folds into a reportable CV result — see below). New tests in
+  `tests/test_train_loop.py` assert a resumed run reproduces an uninterrupted one exactly.
+- `scripts/train_resnet_baseline.py`: added `--resume`, `--device`, `--amp-dtype` (auto-selects
+  bf16 on Ampere+/CUDA, fp16 on older CUDA e.g. a Colab T4, none on MPS/CPU), `--num-workers`,
+  `--pin-memory`, `--epoch-limit`. Run directory names are now stable
+  (`{architecture}_{fold}_seed{seed}`, no timestamp) so `--resume` can find the right checkpoint
+  dir across sessions — a deliberate, flagged deviation from docs/METHODOLOGY.md §10's run_id
+  convention (disk-wins, CLAUDE.md §9); start/end timestamps are recorded inside `metrics.json`
+  instead.
+- **Real gap found and fixed while wiring this up**: `train_resnet_baseline.py` only ever wrote
+  one fold's raw val AUC — there was no code path that pools 5 folds into the same OOF-CV +
+  bootstrap-CI schema every other Phase 5 baseline (`majority`, `age_only`, `radiomics_gbm`) uses
+  in `results_table.py`/`make table`. Fixed by: (1) each fold run now also saves per-patient val
+  predictions (`predict_probs_by_task`); (2) extracted the metrics/CI computation shared by every
+  baseline into `src/glioma/eval/report.py` (`build_experiment_record`, lint/mypy-clean, new
+  tests in `tests/test_report.py`); (3) new `scripts/aggregate_resnet_grid.py` pools all 5 folds'
+  predictions per (architecture, seed, task), refuses to aggregate a missing or
+  epoch-budget-truncated fold, and writes `experiments/<architecture>_<task>_seed<seed>_<ts>/
+  metrics.json` in the same schema — this is what `make table` will actually read.
+- `notebooks/colab_pilot.ipynb` (orchestration only, no logic — CLAUDE.md §6): mounts Drive,
+  clones the repo, installs pinned deps (with a CUDA `torch==2.14.0` wheel), copies the
+  `tumor_crop` cache in from Drive, symlinks `experiments/` to Drive for persistence, then shells
+  out to `train_resnet_baseline.py` (pilot, then the full grid) and `aggregate_resnet_grid.py`.
+  Explicitly tells the user to sync results back and commit from the local machine, not from
+  Colab.
+- `docs/adr/004-colab-training-workflow.md`: records all of the above decisions and why.
+- **Environment blocker hit and partially resolved**: macOS updated mid-session to a `27.0`
+  beta build; the venv's `scipy` (pinned `1.15.3`) then failed to import
+  (`sklearn` → `scipy.sparse` → PROPACK Fortran extension `dlopen` error, a dyld
+  thread-local-storage incompatibility with the new OS). Diagnosed as a genuine OS/toolchain
+  issue, not a corrupted install: force-reinstalling the identical pinned wheel, recreating the
+  venv from scratch, and installing the matching Xcode Command Line Tools (27.0, which the OS
+  update hadn't pulled yet) all reproduced the identical error. **User chose to proceed on code
+  review only** (ruff/black/mypy all pass on every new/changed file) rather than reboot mid-task
+  to clear the dyld cache — so **`pytest` has not actually been run against
+  `tests/test_train_loop.py` or `tests/test_report.py` this session**, and per CLAUDE.md §9
+  nothing above has been committed. Recommend running `make test` (after a reboot, which usually
+  clears this class of dyld issue) before trusting/committing this work.
+- **Actual GPU execution is still entirely undone.** Claude Code has no Colab/browser/cloud-GPU
+  tool access in this environment — the notebook above must be run by the user in a real Colab
+  GPU runtime. No pilot or grid result exists yet; nothing has been fabricated in its place
+  (CLAUDE.md §9 rule 8).
 
 ### Next
 
-1. **Resolve the memory-pressure problem before re-attempting the ResNet pilot** — free up
-   memory (close other heavy apps) and/or reduce `num_workers`/batch size in
-   `configs/train/default.yaml`, then rerun the 1-fold/1-seed pilot to get a trustworthy
-   per-epoch timing before committing to the full 5-fold × 3-seed × {resnet18,resnet34} grid.
-   **Do not start the full grid without a completed, timed pilot and explicit go-ahead** — this
-   is still the standing instruction from earlier in Phase 5.
-2. Once the pilot completes: run the full 3D ResNet grid, add it to `results/baselines.md`, and
-   that closes Phase 5's CLAUDE.md §10 definition of done (majority, age-only, radiomics+GBM
-   already done; 3D ResNet the only piece remaining).
-3. Rerun both Phase 3 preprocessing regimes as the remaining ~30/495 patients finish downloading
+1. **You (not Claude Code) run `notebooks/colab_pilot.ipynb` in an actual Colab GPU runtime**:
+   upload the `tumor_crop` cache to Drive first, then run cells 1-5 (the 1-fold/1-seed pilot).
+   Report the resulting seconds/epoch and peak GPU memory back before anything further — the
+   standing "no full grid without a completed, timed pilot and explicit go-ahead" rule still
+   applies, now on Colab instead of the M4.
+2. Once the environment/dyld issue is cleared (reboot is the standard fix), run
+   `make lint && make test` locally and commit this session's infra
+   (`loop.py`/`train_resnet_baseline.py`/`report.py`/`aggregate_resnet_grid.py`/the notebook/
+   ADR 004) — currently correct-by-review but unverified and uncommitted.
+3. After the pilot is reviewed and approved: run the full grid (cell 6), aggregate (cell 7),
+   `make table` (cell 8), then sync `experiments/*/metrics.json` (not `checkpoints/`) back to the
+   local repo and commit from there. That closes Phase 5's CLAUDE.md §10 definition of done.
+4. Rerun both Phase 3 preprocessing regimes as the remaining ~30/495 patients finish downloading
    (resumable) — still open from Phase 3/4, not blocking Phase 5.
 
 ### Open questions
@@ -220,4 +279,8 @@
   reproducibility.
 - What is actually consuming host memory during ResNet training such that it grows across
   epochs rather than staying flat (DataLoader worker accumulation? MONAI transform caching?) —
-  needs profiling before the full grid, not just a smaller batch size as a band-aid.
+  moot for the Colab-GPU path, but relevant again if the M4/MPS path is ever revisited.
+- **Local venv is currently unverified against `pytest`** due to the macOS-27-beta/scipy dyld
+  issue above. Try a reboot first (clears the dyld cache in most reports of this class of
+  issue); if that doesn't fix it, this needs investigating on its own (possibly a scipy issue
+  tracker report, or waiting for a point release/CLT update actually built against the new OS).
