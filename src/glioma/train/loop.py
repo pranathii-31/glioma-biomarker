@@ -272,7 +272,13 @@ def train_with_early_stopping(
         # fold's predictions are trustworthy).
         stopped_epoch = checkpoint["epoch"]
         converged = epochs_without_improvement >= patience
-        torch.set_rng_state(checkpoint["torch_rng_state"])
+        # `torch.load(..., map_location=device)` moves every tensor in the checkpoint onto
+        # `device`, including this one - but `torch.get_rng_state()`/`set_rng_state()` always
+        # operate on the CPU generator specifically, and `set_rng_state` rejects a non-CPU
+        # ByteTensor outright ("RNG state must be a torch.ByteTensor"). Only reproducible on a
+        # GPU/MPS resume, not on the CPU-only local test suite, where map_location="cpu" is a
+        # no-op - this crashed a real Colab CUDA run before it was caught here.
+        torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
         if device.type == "cuda" and checkpoint["cuda_rng_state"] is not None:
             torch.cuda.set_rng_state(checkpoint["cuda_rng_state"], device)
         logger.info("resumed from %s at epoch %d", resume_from, start_epoch)

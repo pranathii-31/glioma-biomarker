@@ -145,6 +145,48 @@ def test_resume_from_checkpoint_reproduces_an_uninterrupted_run(tmp_path: Path) 
     assert resumed.val_auc == uninterrupted.val_auc
 
 
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="needs a non-CPU device")
+def test_resume_on_a_non_cpu_device_does_not_crash_on_rng_state(tmp_path: Path) -> None:
+    """Regression test for a real Colab CUDA failure: `torch.load(..., map_location=device)`
+    moves every tensor in the checkpoint onto `device`, including `torch_rng_state` - but
+    `torch.set_rng_state` always operates on the CPU generator and rejects a non-CPU tensor with
+    `TypeError: RNG state must be a torch.ByteTensor`. Only reproducible off CPU, which is why
+    the CPU-only suite (`test_resume_from_checkpoint_reproduces_an_uninterrupted_run`) never
+    caught it - MPS is the closest thing to CUDA's map_location behaviour available in CI/locally.
+    """
+    device = torch.device("mps")
+    train_loader = _make_loader(64, seed=0)
+    val_loader = _make_loader(32, seed=1)
+    common_kwargs = dict(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        device=device,
+        task_weights={"idh": 1.0, "mgmt": 1.0},
+        lr=0.05,
+        weight_decay=0.0,
+        warmup_epochs=1,
+        max_epochs=4,
+        patience=10,
+    )
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    torch.manual_seed(0)
+    first_half = train_with_early_stopping(
+        model=_TinyModel().to(device),
+        checkpoint_dir=checkpoint_dir,
+        epoch_limit=2,
+        **common_kwargs,
+    )
+    assert first_half.stopped_epoch == 1
+
+    resume_from = find_latest_checkpoint(checkpoint_dir)
+    assert resume_from is not None
+    # Must not raise `TypeError: RNG state must be a torch.ByteTensor`.
+    train_with_early_stopping(
+        model=_TinyModel().to(device), resume_from=resume_from, **common_kwargs
+    )
+
+
 def test_find_latest_checkpoint_returns_none_when_no_checkpoints_exist(tmp_path: Path) -> None:
     assert find_latest_checkpoint(tmp_path / "does_not_exist") is None
 
