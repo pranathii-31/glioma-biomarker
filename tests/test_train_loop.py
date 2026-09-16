@@ -15,6 +15,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from glioma.train.loop import (
+    _restore_rng_state,
     cosine_warmup_lr,
     find_latest_checkpoint,
     prune_old_checkpoints,
@@ -185,6 +186,57 @@ def test_resume_on_a_non_cpu_device_does_not_crash_on_rng_state(tmp_path: Path) 
     train_with_early_stopping(
         model=_TinyModel().to(device), resume_from=resume_from, **common_kwargs
     )
+
+
+class _RecordingRngState:
+    """Stands in for a checkpoint's `cuda_rng_state` tensor to prove `.cpu()` gets called on it.
+
+    A real end-to-end reproduction (as done for the CPU-generator half via MPS above) isn't
+    possible on this machine: `torch.cuda.is_available()` is False and even
+    `nn.Module.to(torch.device("cuda"))` raises `Torch not compiled with CUDA enabled`, so the
+    CUDA branch inside `_restore_rng_state` can never actually execute here. This checks the
+    fix's mechanism directly instead of skipping the case entirely.
+    """
+
+    def __init__(self) -> None:
+        self.cpu_called = False
+
+    def cpu(self) -> _RecordingRngState:
+        self.cpu_called = True
+        return self
+
+
+def test_restore_rng_state_moves_the_cuda_rng_state_to_cpu_before_restoring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Second, distinct occurrence of the same bug class as
+    `test_resume_on_a_non_cpu_device_does_not_crash_on_rng_state`: a real Colab CUDA resume hit
+    an identical `TypeError` on the second RNG restore call (`torch.cuda.set_rng_state`) even
+    after the first (`torch.set_rng_state`) was fixed - `torch.cuda.get_rng_state()` also
+    produces a CPU ByteTensor that `map_location=device` moves onto the wrong device."""
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(torch, "set_rng_state", lambda state: None)
+    monkeypatch.setattr(
+        torch.cuda, "set_rng_state", lambda state, device: captured.update(state=state)
+    )
+    fake_cuda_rng_state = _RecordingRngState()
+    checkpoint = {
+        "torch_rng_state": torch.get_rng_state(),
+        "cuda_rng_state": fake_cuda_rng_state,
+    }
+
+    _restore_rng_state(checkpoint, torch.device("cuda"))
+
+    assert fake_cuda_rng_state.cpu_called
+    assert captured["state"] is fake_cuda_rng_state
+
+
+def test_restore_rng_state_skips_cuda_state_off_cuda() -> None:
+    """No `cuda_rng_state` handling should happen at all on CPU/MPS - `checkpoint` need not
+    even contain a usable `cuda_rng_state` there, matching what `train_with_early_stopping`
+    actually writes (`None` on a non-CUDA run)."""
+    checkpoint = {"torch_rng_state": torch.get_rng_state(), "cuda_rng_state": None}
+    _restore_rng_state(checkpoint, torch.device("cpu"))  # must not raise
 
 
 def test_find_latest_checkpoint_returns_none_when_no_checkpoints_exist(tmp_path: Path) -> None:

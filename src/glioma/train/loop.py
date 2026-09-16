@@ -195,6 +195,29 @@ def _gpu_peak_memory_gb(device: torch.device) -> float | None:
     return torch.cuda.max_memory_allocated(device) / 1e9
 
 
+def _restore_rng_state(checkpoint: dict[str, Any], device: torch.device) -> None:
+    """Restore RNG state from a checkpoint, always as CPU tensors regardless of `device`.
+
+    `torch.load(resume_from, map_location=device)` moves every tensor in the checkpoint onto
+    `device`, including these two - but both `torch.get_rng_state()` and
+    `torch.cuda.get_rng_state()` always produce a CPU ByteTensor representing the respective
+    generator's state, and `set_rng_state`/`cuda.set_rng_state` reject anything else outright
+    ("RNG state must be a torch.ByteTensor"). Explicitly `.cpu()` both before restoring, rather
+    than relying on whatever device `map_location` happened to move them to.
+
+    Extracted as its own function so the CUDA branch is unit-testable on a machine with no CUDA
+    build at all (this one: `torch.cuda.is_available()` is False and even
+    `nn.Module.to(torch.device("cuda"))` raises `Torch not compiled with CUDA enabled`) - the
+    CPU-generator half was reproduced and fixed via a real MPS resume (the closest available
+    analog to CUDA's map_location behaviour), but the CUDA-generator half of this same bug class
+    could only be caught by inspection once the CPU half was fixed, since a real Colab CUDA
+    resume was needed to reach the second `set_rng_state` call at all.
+    """
+    torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
+    if device.type == "cuda" and checkpoint["cuda_rng_state"] is not None:
+        torch.cuda.set_rng_state(checkpoint["cuda_rng_state"].cpu(), device)
+
+
 def train_with_early_stopping(
     model: nn.Module,
     train_loader: DataLoader[object],
@@ -272,15 +295,7 @@ def train_with_early_stopping(
         # fold's predictions are trustworthy).
         stopped_epoch = checkpoint["epoch"]
         converged = epochs_without_improvement >= patience
-        # `torch.load(..., map_location=device)` moves every tensor in the checkpoint onto
-        # `device`, including this one - but `torch.get_rng_state()`/`set_rng_state()` always
-        # operate on the CPU generator specifically, and `set_rng_state` rejects a non-CPU
-        # ByteTensor outright ("RNG state must be a torch.ByteTensor"). Only reproducible on a
-        # GPU/MPS resume, not on the CPU-only local test suite, where map_location="cpu" is a
-        # no-op - this crashed a real Colab CUDA run before it was caught here.
-        torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
-        if device.type == "cuda" and checkpoint["cuda_rng_state"] is not None:
-            torch.cuda.set_rng_state(checkpoint["cuda_rng_state"], device)
+        _restore_rng_state(checkpoint, device)
         logger.info("resumed from %s at epoch %d", resume_from, start_epoch)
 
     for epoch in range(start_epoch, max_epochs):
