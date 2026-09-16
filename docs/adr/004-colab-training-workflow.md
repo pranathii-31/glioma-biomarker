@@ -39,7 +39,10 @@ thrashing, and CUDA on a Colab GPU is the approved alternative (user-confirmed).
    timestamps are recorded inside `metrics.json` instead, so run provenance is not lost.
 
 4. **AMP dtype is auto-selected per device, not hardcoded to `configs/train/default.yaml`'s
-   `bf16`.** `bf16` needs Ampere+ tensor cores; a free-tier Colab GPU is commonly a T4 (Turing,
+   `bf16`.** *(The capability check described below was superseded by
+   [ADR 005](005-phase5-throughput-and-checkpoint-retention.md): `is_bf16_supported()` also
+   returns True on Turing, where bf16 is emulated. The classification of AMP dtype as infra
+   rather than protocol, and everything else in this section, still stands.)* `bf16` needs Ampere+ tensor cores; a free-tier Colab GPU is commonly a T4 (Turing,
    fp16-only). `_select_amp_dtype` in `scripts/train_resnet_baseline.py` picks bf16 on
    bf16-capable CUDA, fp16 on other CUDA, and disables autocast entirely on MPS/CPU - matching
    what the M4 pilot actually ran, so an M4 rerun (if ever needed) stays comparable. This is an

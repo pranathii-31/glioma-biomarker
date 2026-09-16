@@ -160,6 +160,35 @@ def find_latest_checkpoint(checkpoint_dir: Path) -> Path | None:
     return max(checkpoints, key=lambda p: int(p.stem.removeprefix("epoch_")))
 
 
+def prune_old_checkpoints(checkpoint_dir: Path, keep: int) -> list[Path]:
+    """Delete all but the `keep` highest-numbered `epoch_N.pt`; return what was deleted.
+
+    A full trainer-state checkpoint is ~532MB for resnet18 and ~1017MB for resnet34 (model +
+    AdamW moments + best_state). Retaining every epoch of Phase 5's 30-run grid would leave
+    ~1-2TB resident on the Google Drive mount these are written to, which no practical Drive
+    tier holds. `find_latest_checkpoint` only ever resumes from the newest, so the older ones
+    are dead weight - purely an infrastructure concern, with no effect on what any run computes.
+
+    `keep` is >1 by default on purpose: a Drive FUSE mount can drop mid-write (observed during
+    Phase 5 as `Transport endpoint is not connected`), leaving the newest checkpoint truncated.
+    Keeping a predecessor means that costs one epoch rather than the whole run.
+    """
+    if keep < 1:
+        raise ValueError(
+            f"keep must be >= 1 (got {keep}) - pruning every checkpoint would leave nothing for "
+            "--resume to continue from, defeating the point of checkpointing at all."
+        )
+    checkpoints = sorted(
+        checkpoint_dir.glob("epoch_*.pt"), key=lambda p: int(p.stem.removeprefix("epoch_"))
+    )
+    stale = checkpoints[:-keep]
+    for path in stale:
+        path.unlink()
+    if stale:
+        logger.info("pruned %d old checkpoint(s), kept the newest %d", len(stale), keep)
+    return stale
+
+
 def _gpu_peak_memory_gb(device: torch.device) -> float | None:
     if device.type != "cuda":
         return None
@@ -181,6 +210,7 @@ def train_with_early_stopping(
     resume_from: Path | None = None,
     amp_dtype: torch.dtype | None = None,
     epoch_limit: int | None = None,
+    keep_last_checkpoints: int = 2,
 ) -> TrainResult:
     """Train `model` with masked multitask BCE, early-stopping on mean validation AUC.
 
@@ -195,6 +225,10 @@ def train_with_early_stopping(
     Colab session to a time/epoch budget and resume the rest later. This is distinct from
     `max_epochs`, which fixes the cosine LR schedule's length and must stay the same across every
     call for one logical run, or the schedule position would jump on resume.
+
+    `keep_last_checkpoints` bounds how many `epoch_N.pt` files are retained (newest first) -
+    see `prune_old_checkpoints` for why this is not optional at this model size. Resume always
+    uses the newest, so this changes storage only, never the trajectory of a run.
 
     `amp_dtype` enables autocast mixed precision when given (e.g. `torch.bfloat16` on
     Ampere+/CPU, `torch.float16` on older CUDA GPUs like a Colab T4 that has no native bf16
@@ -310,6 +344,7 @@ def train_with_early_stopping(
                 },
                 checkpoint_dir / f"epoch_{epoch}.pt",
             )
+            prune_old_checkpoints(checkpoint_dir, keep=keep_last_checkpoints)
 
         if converged:
             break

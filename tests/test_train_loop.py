@@ -9,11 +9,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from glioma.train.loop import cosine_warmup_lr, find_latest_checkpoint, train_with_early_stopping
+from glioma.train.loop import (
+    cosine_warmup_lr,
+    find_latest_checkpoint,
+    prune_old_checkpoints,
+    train_with_early_stopping,
+)
 
 
 class _TinyModel(nn.Module):
@@ -177,3 +183,74 @@ def test_resume_of_an_already_finished_run_reports_the_real_final_state(tmp_path
 
     assert no_op_resume.stopped_epoch == 4
     assert no_op_resume.epoch_log == finished.epoch_log
+
+
+def test_checkpointing_retains_only_the_newest_two_epochs(tmp_path: Path) -> None:
+    """A full-state checkpoint is ~0.5-1GB at this model size, so retaining every epoch of the
+    30-run Phase 5 grid would need ~1-2TB on the Drive mount they're written to. Only the
+    newest is ever resumed from; the predecessor is kept so a checkpoint truncated by a Drive
+    FUSE drop mid-write costs one epoch rather than the whole run."""
+    checkpoint_dir = tmp_path / "checkpoints"
+    train_with_early_stopping(
+        model=_TinyModel(),
+        train_loader=_make_loader(32, seed=0),
+        val_loader=_make_loader(16, seed=1),
+        device=torch.device("cpu"),
+        task_weights={"idh": 1.0, "mgmt": 1.0},
+        lr=0.05,
+        weight_decay=0.0,
+        warmup_epochs=0,
+        max_epochs=6,
+        patience=10,
+        checkpoint_dir=checkpoint_dir,
+    )
+
+    remaining = sorted(p.name for p in checkpoint_dir.glob("epoch_*.pt"))
+    assert remaining == ["epoch_4.pt", "epoch_5.pt"]
+
+
+def test_pruned_run_still_resumes_from_the_newest_checkpoint(tmp_path: Path) -> None:
+    """Pruning must not break --resume: find_latest_checkpoint reads only the newest, so a
+    pruned run has to land on the same result as the unpruned equivalent."""
+    common_kwargs = dict(
+        train_loader=_make_loader(64, seed=0),
+        val_loader=_make_loader(32, seed=1),
+        device=torch.device("cpu"),
+        task_weights={"idh": 1.0, "mgmt": 1.0},
+        lr=0.05,
+        weight_decay=0.0,
+        warmup_epochs=2,
+        max_epochs=10,
+        patience=10,
+    )
+
+    torch.manual_seed(0)
+    uninterrupted = train_with_early_stopping(model=_TinyModel(), **common_kwargs)
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    torch.manual_seed(0)
+    interrupted_model = _TinyModel()
+    train_with_early_stopping(
+        model=interrupted_model, checkpoint_dir=checkpoint_dir, epoch_limit=4, **common_kwargs
+    )
+    assert sorted(p.name for p in checkpoint_dir.glob("epoch_*.pt")) == [
+        "epoch_2.pt",
+        "epoch_3.pt",
+    ]
+
+    resume_from = find_latest_checkpoint(checkpoint_dir)
+    assert resume_from is not None and resume_from.name == "epoch_3.pt"
+    resumed = train_with_early_stopping(
+        model=interrupted_model, resume_from=resume_from, **common_kwargs
+    )
+
+    assert resumed.epoch_log == uninterrupted.epoch_log
+    assert resumed.val_auc == uninterrupted.val_auc
+
+
+def test_prune_old_checkpoints_refuses_to_delete_everything(tmp_path: Path) -> None:
+    """keep=0 would leave --resume nothing to continue from - fail loudly (CLAUDE.md §6)."""
+    tmp_path.joinpath("epoch_0.pt").touch()
+    with pytest.raises(ValueError, match="keep must be >= 1"):
+        prune_old_checkpoints(tmp_path, keep=0)
+    assert tmp_path.joinpath("epoch_0.pt").exists()

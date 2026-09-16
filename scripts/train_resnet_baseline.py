@@ -59,6 +59,19 @@ def _select_device(explicit: str | None) -> torch.device:
     return torch.device("cpu")
 
 
+def _has_native_bf16(device: torch.device) -> bool:
+    """True only for CUDA devices with real bf16 tensor cores - Ampere+ (compute capability 8.0+).
+
+    Deliberately not `torch.cuda.is_bf16_supported()`: that also returns True on Turing (the
+    Colab free tier's T4), where bf16 is *emulated* rather than native. Measured on a T4 for the
+    same run: 202s/epoch under emulated bf16 vs 65.5s/epoch under fp16 - a 3.1x wall-clock
+    penalty for no numerical benefit, since the emulation buys none of bf16's speed and fp16
+    plus the GradScaler already wired into `train_with_early_stopping` covers its dynamic range.
+    """
+    major, _minor = torch.cuda.get_device_capability(device)
+    return major >= 8
+
+
 def _select_amp_dtype(device: torch.device, explicit: str | None) -> torch.dtype | None:
     """Auto-select bf16 on Ampere+/CUDA, fp16 on older CUDA (e.g. a Colab T4), none elsewhere.
 
@@ -69,7 +82,7 @@ def _select_amp_dtype(device: torch.device, explicit: str | None) -> torch.dtype
         return _AMP_DTYPES[explicit]
     if device.type != "cuda":
         return None
-    return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    return torch.bfloat16 if _has_native_bf16(device) else torch.float16
 
 
 def main() -> None:
@@ -148,7 +161,15 @@ def main() -> None:
 
     device = _select_device(args.device)
     amp_dtype = _select_amp_dtype(device, args.amp_dtype)
-    print(f"device: {device}, amp_dtype: {amp_dtype}")
+    # Every step sees the identical input shape (batch_size, 4, 96, 96, 96), so cuDNN can
+    # autotune its 3D convolution algorithms once and reuse that choice for the whole run
+    # instead of re-picking heuristically on every call. Recorded in metrics.json below because
+    # docs/METHODOLOGY.md §10 requires determinism-affecting settings to be recorded, not just
+    # set - benchmark mode may select non-deterministic kernels.
+    cudnn_benchmark = device.type == "cuda"
+    if cudnn_benchmark:
+        torch.backends.cudnn.benchmark = True
+    print(f"device: {device}, amp_dtype: {amp_dtype}, cudnn_benchmark: {cudnn_benchmark}")
     model = build_cnn3d(model_cfg, n_input_channels=len(data_cfg.modalities)).to(device)
 
     run_id = f"{args.architecture}_{args.fold}_seed{args.seed}"
@@ -228,6 +249,7 @@ def main() -> None:
                 "oof_predictions": oof_predictions,
                 "device": str(device),
                 "amp_dtype": str(amp_dtype) if amp_dtype is not None else None,
+                "cudnn_benchmark": cudnn_benchmark,
                 "elapsed_seconds_this_invocation": elapsed,
                 "started_at": started_at,
                 "finished_at": finished_at,
