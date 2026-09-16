@@ -1,0 +1,45 @@
+# Research-prototype (Streamlit) settings - see docs/adr/006-prototype-frontend-mock-backed.md.
+# Thresholds and labels live here, never in src/ (CLAUDE.md §6).
+
+# Which backend from glioma.inference.predictor.REGISTRY to use.
+# Only "mock" is implemented; cnn3d / cnn_vit3d / snn3d are registered but not yet built.
+predictor: mock
+
+# Input regime is chosen by whether the user supplies a tumour segmentation.
+# With a mask -> tumor_crop (literature-comparable, but assumes an expert-quality mask the
+# prototype cannot produce itself). Without -> whole_brain, the honest end-to-end path with no
+# segmentation dependency. See docs/DATASET.md §8 and ACTION_PLAN.md A9.
+input_regime_with_mask: tumor_crop
+input_regime_without_mask: whole_brain
+
+# Temperature scaling is not implemented yet (src/glioma/eval/calibration.py is a docstring).
+# While this is false the UI states that probabilities are uncalibrated - CLAUDE.md §2 rule 10
+# and ACTION_PLAN.md Phase 10 require the prototype to display *calibrated* probabilities, so
+# this must flip to true only once calibration is genuinely fitted on validation data.
+calibrated: false
+
+# Decision thresholds are placeholders at 0.5. A real threshold is chosen on the validation
+# split, never on test (docs/METHODOLOGY.md §4/L6), and must be revisited when real weights land.
+tasks:
+  idh:
+    threshold: 0.5
+    positive_label: IDH-mutant
+    negative_label: IDH-wildtype
+    # A constant predictor's accuracy - always displayed beside the model's own output
+    # (CLAUDE.md §2 rule 3). Source: docs/DATASET.md §5.
+    majority_baseline_accuracy: 0.79
+  mgmt:
+    threshold: 0.5
+    positive_label: MGMT promoter methylated
+    negative_label: MGMT promoter unmethylated
+    majority_baseline_accuracy: 0.72
+
+# Realistic AUC ranges from CLAUDE.md §3, shown in the UI so a single probability is never read
+# as more authoritative than the model family's measured performance.
+expected_auc:
+  idh: "0.85-0.92"
+  mgmt: "0.55-0.68"
+
+# Matches Streamlit's own default `server.maxUploadSize`. Gzipped NIfTI at 240x240x155 is
+# typically 5-15MB per series, so four series plus a segmentation fit comfortably.
+max_upload_mb: 200
